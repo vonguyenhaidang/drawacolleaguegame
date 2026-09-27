@@ -146,6 +146,25 @@
   #showcaseField{position:absolute; inset:0; overflow:hidden;}
   .empty-hint{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:var(--sub); font-size:14px; text-align:center; padding:20px;}
 
+  /* ---- reveal gate: hide the board until the host is ready to show it ---- */
+  .gate{
+    position:absolute; inset:0; z-index:40; background:var(--paper);
+    display:flex; align-items:center; justify-content:center; padding:24px;
+    transition:opacity .5s ease, visibility .5s ease;
+  }
+  .gate.hidden{opacity:0; visibility:hidden; pointer-events:none;}
+  .gateCard{max-width:420px; display:flex; flex-direction:column; align-items:center; gap:12px; text-align:center;}
+  .gateCard h2{margin:0; font-size:22px;}
+  .gateCard p{margin:0; color:var(--sub); font-size:14px; line-height:1.5;}
+  .gateCard .gateStatus{font-size:12px; color:var(--accent); min-height:1em;}
+  .gateCard .spinner.big{width:36px; height:36px; border-width:4px;}
+  .gateIcon{font-size:46px; display:none;}
+  .gateCard #revealBtn{display:none; margin-top:6px;}
+  @media (max-width:640px){
+    .gateCard h2{font-size:19px;}
+    .gateCard p{font-size:13px;}
+  }
+
   /* ---- phone showcase: a scrollable grid instead of a fixed scatter ---- */
   #showcaseField.phoneLayout{
     display:grid; grid-template-columns:repeat(auto-fill, minmax(148px,1fr));
@@ -322,6 +341,16 @@
   <div id="showcaseHeader"><h1 class="hand">How our colleague see us in their eyes?</h1><span>— Take a look</span></div>
   <div id="showcaseField"></div>
   <div id="showcaseCount"></div>
+  <div id="showcaseGate" class="gate">
+    <div class="gateCard">
+      <div class="spinner big" id="gateSpinner"></div>
+      <div class="gateIcon" id="gateIcon">🎉</div>
+      <h2 id="gateTitle">ICE&nbsp;-&nbsp;BREAKER</h2>
+      <p id="gateSub">Who did you draw?<br>Did some of you draw the same colleague?</p>
+      <p id="gateStatus" class="gateStatus"></p>
+      <button class="btn primary" id="revealBtn">Reveal the board</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -531,16 +560,40 @@
 
   // ================= SHOWCASE MODE =================
   let showcasePoll = null;
+  let revealed = false;
   const placed = new Map(); // id -> {el}
   const order = []; // ids in the order first seen, keeps each doodle's grid slot stable
+
+  function gateLoading(msg){
+    $('showcaseGate').classList.remove('hidden');
+    $('gateSpinner').style.display = 'block';
+    $('gateIcon').style.display = 'none';
+    $('revealBtn').style.display = 'none';
+    $('gateStatus').textContent = msg || '';
+  }
+  function gateReady(){
+    if(revealed) return;
+    $('gateSpinner').style.display = 'none';
+    $('gateIcon').style.display = 'block';
+    $('revealBtn').style.display = 'inline-block';
+    $('gateStatus').textContent = '';
+  }
+  $('revealBtn').addEventListener('click', ()=>{
+    revealed = true;
+    $('showcaseGate').classList.add('hidden');
+  });
 
   function startShowcase(){
     show('screenShowcase');
     placed.forEach(p=>p.el.remove());
     placed.clear();
+    order.length = 0;
     $('showcaseField').innerHTML = '';
+    revealed = false;
+    gateLoading();
     if(!backendReady()){
       $('showcaseField').innerHTML = '<div class="empty-hint">⚠️ Backend not configured — set BACKEND_URL near the top of this file (see SETUP.md).</div>';
+      gateLoading('Backend not configured — set BACKEND_URL near the top of this file (see SETUP.md).');
       return;
     }
     fetchAndPlace();
@@ -563,12 +616,17 @@
         $('showcaseCount').textContent = list.length + (list.length===1 ? ' doodle' : ' doodles');
         if(list.length===0){
           $('showcaseField').innerHTML = '<div class="empty-hint">No doodles yet — head to Start Drawing on another device to add the first one.</div>';
+          if(!revealed) gateLoading('Waiting for the first doodle to come in…');
           return;
         }
         document.querySelector('.empty-hint')?.remove();
         layout(list);
+        if(!revealed) gateReady(); // board is fully built and ready — just hidden behind the gate
       })
-      .catch(()=>{ /* keep whatever is already on screen, just skip this poll */ });
+      .catch(()=>{
+        // keep whatever is already on screen, just skip this poll
+        if(!revealed) gateLoading("Can't reach the backend yet — check the connection.");
+      });
   }
 
   function parseMeta(filename){
