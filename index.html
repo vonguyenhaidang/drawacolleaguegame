@@ -503,7 +503,7 @@
   }
 
   function confirmSaved(filename, attempt){
-    fetch(BACKEND_URL + (BACKEND_URL.includes('?') ? '&' : '?') + 'action=list', { cache:'no-store' })
+    fetch(BACKEND_URL + (BACKEND_URL.includes('?') ? '&' : '?') + 'light=1', { cache:'no-store' })
       .then(r=>r.json())
       .then(list=>{
         const found = Array.isArray(list) && list.some(f=> f.name === filename);
