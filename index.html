@@ -17,7 +17,7 @@
   // Paste your deployed Google Apps Script Web App URL here (same URL for
   // both saving and listing doodles — the backend tells POST from GET apart).
   const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbzcYW0R2zjMSprTIGXicw3p8P8M3hZU2NEx0Yqz-KxsuBSsB76z39bLg7_AuRCSugcwuw/exec';
-  const ROUND_SECONDS = 180; // 3 minutes
+  const ROUND_SECONDS = 300; // 5 minutes
   const SHOWCASE_POLL_MS = 8000; // how often showcase mode checks for new doodles
 </script>
 <style>
@@ -38,7 +38,8 @@
   .screen.active{display:flex;}
 
   /* ---------------- HOME ---------------- */
-  #screenHome{align-items:center; justify-content:center; gap:28px; padding:24px; text-align:center;
+  #screenHome{align-items:center; justify-content:center; gap:22px; padding:24px; text-align:center;
+    overflow-y:auto; -webkit-overflow-scrolling:touch;
     background:
       radial-gradient(circle at 15% 20%, #ffe4d8 0%, transparent 40%),
       radial-gradient(circle at 85% 80%, #d7f3ee 0%, transparent 42%),
@@ -47,6 +48,17 @@
   #screenHome h1{font-size:clamp(34px,7vw,64px); margin:0; line-height:1.02;}
   #screenHome h1 .q{color:var(--accent);}
   #screenHome p.sub{margin:0; color:var(--sub); font-size:15px; max-width:440px;}
+  .rulesCard{
+    width:100%; max-width:520px; text-align:left; background:var(--paper);
+    border:2px solid var(--line); border-radius:16px; padding:16px 20px;
+    box-shadow:0 8px 20px rgba(30,25,15,.05);
+  }
+  .rulesCard h4{margin:0 0 10px; font-size:13.5px; font-weight:800; color:var(--accent);}
+  .rulesCard ol{margin:0; padding-left:20px; display:flex; flex-direction:column; gap:7px;}
+  .rulesCard li{font-size:13.5px; line-height:1.5; color:var(--ink);}
+  .rulesCard .tagline{margin:12px 0 0; padding-top:12px; border-top:1px dashed var(--line);
+    font-size:13px; line-height:1.5; color:var(--sub);}
+  .rulesCard .tagline b{color:var(--ink);}
   .modeRow{display:flex; gap:18px; flex-wrap:wrap; justify-content:center;}
   .modeCard{
     width:230px; padding:26px 20px; border-radius:20px; border:2px solid var(--line);
@@ -100,6 +112,14 @@
   .swatch{width:26px; height:26px; border-radius:8px; border:2px solid transparent; cursor:pointer; flex:none;}
   .swatch.sel{border-color:var(--ink); transform:scale(1.1);}
   .swatch.eraser{background:var(--paper); border:2px dashed var(--line); font-size:13px; display:flex; align-items:center; justify-content:center;}
+  .swatch.colorpicker{
+    padding:0; -webkit-appearance:none; appearance:none;
+    background:conic-gradient(red,yellow,lime,cyan,blue,magenta,red);
+    border:2px solid var(--line); cursor:pointer;
+  }
+  .swatch.colorpicker::-webkit-color-swatch-wrapper{padding:2px; border-radius:6px;}
+  .swatch.colorpicker::-webkit-color-swatch{border:none; border-radius:5px;}
+  .swatch.colorpicker::-moz-color-swatch{border:none; border-radius:5px;}
   #sizeRange{width:80px; accent-color:var(--accent);}
   .tool{background:rgba(0,0,0,.05); border:1px solid var(--line); border-radius:10px; padding:6px 10px; font-size:12px; cursor:pointer;}
 
@@ -114,22 +134,105 @@
   /* ---------------- SHOWCASE ---------------- */
   #screenShowcase{background:var(--paper);}
   #showcaseHeader{
-    position:absolute; top:16px; left:20px; z-index:5; display:flex; align-items:baseline; gap:10px; pointer-events:none;
+    position:absolute; top:16px; left:20px; right:20px; z-index:5; display:flex; align-items:baseline; gap:10px; pointer-events:none;
   }
   #showcaseHeader h1{margin:0; font-size:20px; color:var(--ink);}
   #showcaseHeader span{font-size:12px; color:var(--sub);}
-  #showcaseCount{position:absolute; bottom:14px; right:18px; z-index:5; font-size:12px; color:var(--sub);}
+  #showcaseCount{
+    position:fixed; bottom:calc(12px + env(safe-area-inset-bottom,0px)); right:16px; z-index:6;
+    font-size:11.5px; color:var(--sub); background:rgba(255,255,255,.85); backdrop-filter:blur(4px);
+    padding:4px 10px; border-radius:999px; box-shadow:0 2px 8px rgba(0,0,0,.06);
+  }
   #showcaseField{position:absolute; inset:0; overflow:hidden;}
   .empty-hint{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:var(--sub); font-size:14px; text-align:center; padding:20px;}
 
+  /* ---- phone showcase: a scrollable grid instead of a fixed scatter ---- */
+  #showcaseField.phoneLayout{
+    display:grid; grid-template-columns:repeat(auto-fill, minmax(148px,1fr));
+    gap:18px 14px; align-content:start; overflow-y:auto; overflow-x:hidden;
+    -webkit-overflow-scrolling:touch; padding:70px 14px calc(70px + env(safe-area-inset-bottom,0px));
+  }
+  #showcaseField.phoneLayout .doodleCard{position:relative !important; left:auto !important; top:auto !important; width:auto !important;}
+  #showcaseField.phoneLayout .doodleCard img{width:100%; height:auto; aspect-ratio:1/1; object-fit:contain;}
+  #showcaseField.phoneLayout .doodleCard .cap{font-size:15px;}
+  #showcaseField.phoneLayout .quoteBubble{max-width:none; width:100%;}
+  @media (max-width:700px){
+    #showcaseHeader{top:calc(10px + env(safe-area-inset-top,0px)); left:14px; right:14px; flex-direction:column; align-items:flex-start; gap:2px;}
+    #showcaseHeader h1{font-size:15.5px; line-height:1.25;}
+    #showcaseHeader span{font-size:10.5px;}
+  }
+
   .doodleCard{
-    position:absolute; width:190px; padding:10px 10px 12px; background:var(--paper);
-    border:2px solid var(--ink); border-radius:6px; box-shadow:4px 6px 0 rgba(0,0,0,.08);
-    opacity:0; transform:scale(.6) rotate(var(--rot,0deg)); transition:opacity .5s ease, transform .5s cubic-bezier(.2,1.4,.4,1);
+    position:absolute; background:transparent; border:none; box-shadow:none;
+    opacity:0; transform:scale(.6) rotate(var(--rot,0deg));
+    transition:opacity .5s ease, transform .5s cubic-bezier(.2,1.4,.4,1), left .6s ease, top .6s ease, width .6s ease;
   }
   .doodleCard.in{opacity:1; transform:scale(1) rotate(var(--rot,0deg));}
-  .doodleCard img{display:block; width:100%; height:150px; object-fit:contain; background:#fff;}
-  .doodleCard .cap{margin-top:8px; text-align:center; font-family:'Kalam',cursive; font-weight:700; font-size:16px; color:var(--ink);}
+  .doodleCard img{display:block; width:100%; object-fit:contain; background:transparent;}
+  .doodleCard .cap{margin-top:6px; text-align:center; font-family:'Kalam',cursive; font-weight:700; font-size:18px; color:var(--ink);}
+
+  .doodleCard{ cursor:default; }
+  .doodleCard:hover{ z-index:30; }
+  .doodleCard .quoteBubble{
+    position:absolute; left:50%; bottom:100%; margin-bottom:10px;
+    transform:translateX(-50%) translateY(6px) scale(.9); transform-origin:50% 100%;
+    background:var(--ink); color:#fff8ec; font-family:'Kalam',cursive; font-weight:700; font-size:15px;
+    line-height:1.35; padding:9px 14px; border-radius:14px; max-width:240px; width:max-content;
+    text-align:center; white-space:normal; pointer-events:none;
+    opacity:0; transition:opacity .18s ease, transform .18s ease; z-index:31;
+  }
+  .doodleCard .quoteBubble::after{
+    content:''; position:absolute; top:100%; left:50%; margin-left:-6px;
+    border:6px solid transparent; border-top-color:var(--ink);
+  }
+  .doodleCard:hover .quoteBubble,
+  .doodleCard.show-quote .quoteBubble{ opacity:1; transform:translateX(-50%) translateY(0) scale(1); }
+  .doodleCard.quote-below .quoteBubble{
+    bottom:auto; top:100%; margin-bottom:0; margin-top:10px; transform-origin:50% 0%;
+    transform:translateX(-50%) translateY(-6px) scale(.9);
+  }
+  .doodleCard.quote-below .quoteBubble::after{
+    top:auto; bottom:100%; border-top-color:transparent; border-bottom-color:var(--ink);
+  }
+  .doodleCard.quote-below:hover .quoteBubble,
+  .doodleCard.quote-below.show-quote .quoteBubble{ transform:translateX(-50%) translateY(0) scale(1); }
+
+  /* ---------------- phone / small-screen tuning ---------------- */
+  @media (max-width:640px){
+    #screenHome{gap:20px; padding:20px;}
+    #screenHome h1{font-size:clamp(30px,10vw,44px);}
+    #screenHome p.sub{font-size:13.5px;}
+    .rulesCard{padding:14px 16px;}
+    .rulesCard li{font-size:12.5px;}
+    .modeRow{flex-direction:column; width:100%; align-items:center;}
+    .modeCard{width:100%; max-width:340px; padding:20px 18px;}
+
+    #screenSetup .card{padding:24px 18px;}
+    #screenSetup h2{font-size:20px;}
+
+    #drawTop{padding:8px 10px; gap:6px;}
+    #drawTop .who{font-size:11px; max-width:34vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+    #drawTop .who b{font-size:13px;}
+    #timer{font-size:17px; padding:3px 9px;}
+    #drawTop .btn{font-size:12px; padding:9px 14px;}
+
+    #drawBottom{
+      padding:8px 8px calc(8px + env(safe-area-inset-bottom,0px));
+      gap:6px; justify-content:space-between;
+    }
+    .swatch{width:34px; height:34px; border-radius:9px;}
+    #sizeRange{width:56px;}
+    .tool{font-size:11px; padding:8px 9px;}
+  }
+  @media (max-width:400px){
+    #drawBottom{row-gap:8px;}
+    .swatch{width:30px; height:30px;}
+  }
+  @media (max-height:520px) and (orientation:landscape){
+    #drawTop{padding:6px 10px;}
+    #drawBottom{padding:6px 8px;}
+    .swatch{width:26px; height:26px;}
+  }
 
   .configWarn{
     position:fixed; left:50%; bottom:16px; transform:translateX(-50%); z-index:50;
@@ -142,12 +245,21 @@
 <!-- ================= HOME ================= -->
 <div id="screenHome" class="screen active">
   <h1>Guess<span class="q"> Who?</span></h1>
-  <p class="sub">Draw a doodle of a colleague in 3 minutes, name them, and see if everyone can guess who's who on the big screen.</p>
+  <p class="sub">Draw a doodle of a colleague in 5 minutes, name them, and see if everyone can guess who's who on the big screen.</p>
+  <div class="rulesCard">
+    <h4>📋 Luật chơi</h4>
+    <ol>
+      <li>Nghĩ đến một đồng nghiệp bạn hay trò chuyện cùng nhất.</li>
+      <li>Nhớ lại xem câu "cửa miệng" họ hay nói nhất là gì.</li>
+      <li>Vẽ chân dung họ bằng khả năng của mình — càng ngộ nghĩnh càng tốt!</li>
+    </ol>
+    <p class="tagline">Rồi cùng khám phá xem — <b>HOW DO YOU LOOK IN THE EYES OF YOUR COLLEAGUE?</b> 👀</p>
+  </div>
   <div class="modeRow">
     <div class="modeCard player" id="goPlayer">
       <span class="ico">🎨</span>
       <h3>Start drawing</h3>
-      <p>You've got 3 minutes to doodle a colleague and submit it.</p>
+      <p>Bạn có 5 phút để vẽ đồng nghiệp và gửi bài.</p>
     </div>
     <div class="modeCard showcase" id="goShowcase">
       <span class="ico">🖼️</span>
@@ -161,10 +273,13 @@
 <div id="screenSetup" class="screen">
   <div class="card">
     <h2>Who are you drawing?</h2>
-    <p>Type their name, then the clock starts. You'll have 3 minutes to doodle them — don't write their name on the canvas!</p>
+    <p>Type their name, then the clock starts. You'll have 5 minutes to doodle them — don't write their name on the canvas!</p>
     <input id="nameField" type="text" placeholder="e.g. Alex from Marketing" maxlength="40" autocomplete="off">
+    <div style="height:12px"></div>
+    <p style="margin:0 0 8px">Now add a quote — something they always say. It'll be the hint people see on the big screen.</p>
+    <input id="quoteField" type="text" placeholder="e.g. &quot;Let's circle back on that&quot;" maxlength="90" autocomplete="off">
     <div style="height:14px"></div>
-    <button class="btn primary" id="startDrawBtn" style="width:100%">Start the 3-minute timer</button>
+    <button class="btn primary" id="startDrawBtn" style="width:100%">Start the 5-minute timer</button>
     <button class="backLink" id="backFromSetup">← Back</button>
   </div>
 </div>
@@ -184,6 +299,7 @@
     <div class="swatch" data-color="#3b6fef" style="background:#3b6fef"></div>
     <div class="swatch" data-color="#f2c94c" style="background:#f2c94c"></div>
     <div class="swatch" data-color="#9b5de5" style="background:#9b5de5"></div>
+    <input type="color" class="swatch colorpicker" id="colorPicker" title="Pick any color" value="#ff0066">
     <div class="swatch eraser" id="eraserBtn" title="Eraser">🧽</div>
     <input type="range" id="sizeRange" min="2" max="26" value="6">
     <button class="tool" id="undoBtn">↺ Undo</button>
@@ -202,7 +318,7 @@
 
 <!-- ================= SHOWCASE ================= -->
 <div id="screenShowcase" class="screen">
-  <div id="showcaseHeader"><h1 class="hand">Guess Who? 🎨</h1><span>— tap nothing, just enjoy</span></div>
+  <div id="showcaseHeader"><h1 class="hand">How our colleague see us in their eyes?</h1><span>— Take a look</span></div>
   <div id="showcaseField"></div>
   <div id="showcaseCount"></div>
 </div>
@@ -225,15 +341,17 @@
   const params = new URLSearchParams(location.search);
   if(params.get('mode') === 'showcase'){ startShowcase(); }
 
-  $('goPlayer').addEventListener('click', ()=>{ $('nameField').value=''; show('screenSetup'); setTimeout(()=>$('nameField').focus(),50); });
+  $('goPlayer').addEventListener('click', ()=>{ $('nameField').value=''; $('quoteField').value=''; show('screenSetup'); setTimeout(()=>$('nameField').focus(),50); });
   $('goShowcase').addEventListener('click', startShowcase);
   $('backFromSetup').addEventListener('click', ()=> show('screenHome'));
 
   // ================= PLAYER MODE =================
-  let who = '';
+  let who = '', quote = '';
   $('startDrawBtn').addEventListener('click', ()=>{
     who = $('nameField').value.trim();
+    quote = $('quoteField').value.trim();
     if(!who) { $('nameField').focus(); return; }
+    if(!quote) { $('quoteField').focus(); return; }
     $('whoLabel').textContent = who;
     show('screenDraw');
     initCanvas();
@@ -294,6 +412,7 @@
     sw.addEventListener('click', ()=>{
       erasing=false; $('eraserBtn').classList.remove('sel');
       document.querySelectorAll('#drawBottom .swatch').forEach(s=>s.classList.remove('sel'));
+      $('colorPicker').classList.remove('sel');
       sw.classList.add('sel'); color = sw.dataset.color;
     });
   });
@@ -302,6 +421,14 @@
     erasing = !erasing;
     $('eraserBtn').classList.toggle('sel', erasing);
     document.querySelectorAll('#drawBottom .swatch[data-color]').forEach(s=>s.classList.remove('sel'));
+    $('colorPicker').classList.remove('sel');
+  });
+  $('colorPicker').addEventListener('input', (e)=>{
+    erasing = false;
+    $('eraserBtn').classList.remove('sel');
+    document.querySelectorAll('#drawBottom .swatch[data-color]').forEach(s=>s.classList.remove('sel'));
+    $('colorPicker').classList.add('sel');
+    color = e.target.value;
   });
   $('sizeRange').addEventListener('input', (e)=> size = +e.target.value);
   $('undoBtn').addEventListener('click', ()=>{
@@ -344,22 +471,22 @@
     $('doneTitle').textContent = 'Saving your doodle…';
     $('doneSub').textContent = 'Hang tight a second.';
     $('doneHomeBtn').style.display = 'none';
-    uploadDoodle(canvas, who);
+    uploadDoodle(canvas, who, quote);
   }
 
-  function makeFilename(name){
+  function makeFilename(name, quote){
     const stamp = new Date().toISOString().replace('T','_').replace(/[:.]/g,'-').slice(0,19);
     const rand = Math.random().toString(36).slice(2,7);
-    return `doodle__${encodeURIComponent(name)}__${stamp}__${rand}.png`;
+    return `doodle__${encodeURIComponent(name)}__${encodeURIComponent(quote)}__${stamp}__${rand}.png`;
   }
 
-  function uploadDoodle(canvasEl, name){
+  function uploadDoodle(canvasEl, name, quote){
     if(!backendReady()){
       onDoneResult(false, 'Backend not set up — ask whoever runs this game to finish the setup (see SETUP.md).');
       return;
     }
     const dataUrl = canvasEl.toDataURL('image/png');
-    const filename = makeFilename(name);
+    const filename = makeFilename(name, quote);
     fetch(BACKEND_URL, {
       method:'POST',
       mode:'no-cors', // Apps Script's response can't be read cross-origin; we just fire-and-forget the request itself
@@ -403,8 +530,8 @@
 
   // ================= SHOWCASE MODE =================
   let showcasePoll = null;
-  const placed = new Map(); // id -> {el, cellIndex}
-  let lastLayoutCols = 0;
+  const placed = new Map(); // id -> {el}
+  const order = []; // ids in the order first seen, keeps each doodle's grid slot stable
 
   function startShowcase(){
     show('screenShowcase');
@@ -443,45 +570,123 @@
       .catch(()=>{ /* keep whatever is already on screen, just skip this poll */ });
   }
 
-  function parseName(filename){
-    const m = filename.match(/^doodle__(.+?)__/);
-    if(!m) return filename.replace(/\.[a-z]+$/i,'');
-    try{ return decodeURIComponent(m[1]); }catch(e){ return m[1]; }
+  function parseMeta(filename){
+    const base = filename.replace(/\.[a-z0-9]+$/i, '');
+    const parts = base.split('__');
+    // current format: doodle__NAME__QUOTE__STAMP__RAND
+    if(parts.length >= 5 && parts[0] === 'doodle'){
+      let name = parts[1], quote = parts[2];
+      try{ name = decodeURIComponent(name); }catch(e){}
+      try{ quote = decodeURIComponent(quote); }catch(e){}
+      return { name, quote };
+    }
+    // older doodles saved before quotes existed: doodle__NAME__STAMP__RAND
+    if(parts.length >= 4 && parts[0] === 'doodle'){
+      let name = parts[1];
+      try{ name = decodeURIComponent(name); }catch(e){}
+      return { name, quote:'' };
+    }
+    return { name: base, quote:'' };
   }
+
+  function isPhoneView(){ return window.matchMedia('(max-width:700px)').matches; }
+
+  function attachQuoteTap(el){
+    const bubble = el.querySelector('.quoteBubble');
+    if(!bubble) return;
+    el.addEventListener('click', (ev)=>{
+      ev.stopPropagation();
+      const wasOpen = el.classList.contains('show-quote');
+      document.querySelectorAll('.doodleCard.show-quote').forEach(c=> c.classList.remove('show-quote'));
+      if(!wasOpen) el.classList.add('show-quote');
+    });
+  }
+  document.addEventListener('click', ()=>{
+    document.querySelectorAll('.doodleCard.show-quote').forEach(c=> c.classList.remove('show-quote'));
+  });
 
   function layout(list){
     const field = $('showcaseField');
+    const phone = isPhoneView();
+    field.classList.toggle('phoneLayout', phone);
+    if(phone){ layoutPhone(list); return; }
     const fw = field.clientWidth, fh = field.clientHeight;
-    const cardW = 190, cardH = 210, gap = 14;
-    const cols = Math.max(3, Math.floor(fw/(cardW+gap)));
-    const rows = Math.max(3, Math.ceil(list.length/cols) + 1);
-    const totalCells = cols*rows;
-    const cellW = fw/cols, cellH = Math.max(cardH+gap, fh/rows);
+    const pad = 18;
+    const availW = Math.max(100, fw - pad*2), availH = Math.max(100, fh - pad*2);
+    const n = list.length;
 
-    if(cols !== lastLayoutCols){ lastLayoutCols = cols; }
+    // ids keep the same grid slot for life (stable ordering), new ones append
+    list.forEach(item=>{ if(order.indexOf(item.id) === -1) order.push(item.id); });
 
-    const used = new Set();
+    // pick a grid that roughly matches the canvas's aspect ratio
+    const cols = Math.max(1, Math.round(Math.sqrt(n * (availW/availH))));
+    const rows = Math.max(1, Math.ceil(n/cols));
+    const cellW = availW/cols, cellH = availH/rows;
+    const margin = 12;
+    const cardW = Math.max(130, Math.min(340, cellW - margin));
+    const imgH = Math.round(cardW * 0.8);
+    const cardH = Math.min(cellH - margin, imgH + 40);
+    const finalImgH = cardH - 40 > 0 ? cardH - 40 : imgH;
+
     list.forEach(item=>{
+      const idx = order.indexOf(item.id);
+      const col = idx % cols, row = Math.floor(idx/cols);
+      const h = hashStr(item.id);
+      const rot = (h % 13) - 6; // gentle -6..6deg tilt, stable per id
+      const jx = (h % 9) - 4, jy = ((h>>3) % 9) - 4;
+
+      let left = pad + col*cellW + (cellW-cardW)/2 + jx;
+      let top = pad + row*cellH + (cellH-cardH)/2 + jy;
+      // clamp so the card (and its slight rotation) always stays fully on screen
+      left = Math.max(pad, Math.min(left, fw - cardW - pad));
+      top = Math.max(pad, Math.min(top, fh - cardH - pad));
+
       let entry = placed.get(item.id);
       if(!entry){
-        const h = hashStr(item.id);
-        let cell = h % totalCells;
-        while(used.has(cell)) cell = (cell+1) % totalCells;
-        used.add(cell);
+        const meta = parseMeta(item.name);
         const el = document.createElement('div');
         el.className = 'doodleCard';
-        const rot = ((h % 17) - 8); // -8..8 deg, stable per id
         el.style.setProperty('--rot', rot+'deg');
-        const jx = (h % 13) - 6, jy = ((h>>3) % 13) - 6;
-        el.style.left = Math.round((cell%cols)*cellW + jx) + 'px';
-        el.style.top = Math.round(Math.floor(cell/cols)*cellH + jy) + 'px';
-        el.innerHTML = `<img src="${item.url}" loading="lazy" alt=""><div class="cap">${escapeHtml(parseName(item.name))}</div>`;
+        el.innerHTML = `<img src="${item.url}" loading="lazy" alt="">`
+          + `<div class="cap">${escapeHtml(meta.name)}</div>`
+          + (meta.quote ? `<div class="quoteBubble">“${escapeHtml(meta.quote)}”</div>` : '');
         field.appendChild(el);
         requestAnimationFrame(()=> el.classList.add('in'));
-        entry = { el, cell };
+        entry = { el };
         placed.set(item.id, entry);
+        attachQuoteTap(el);
+      }
+      entry.el.style.width = Math.round(cardW) + 'px';
+      entry.el.style.left = Math.round(left) + 'px';
+      entry.el.style.top = Math.round(top) + 'px';
+      entry.el.classList.toggle('quote-below', top < 90);
+      entry.el.querySelector('img').style.height = Math.round(finalImgH) + 'px';
+    });
+  }
+
+  function layoutPhone(list){
+    const field = $('showcaseField');
+    list.forEach(item=>{
+      if(order.indexOf(item.id) === -1) order.push(item.id);
+      let entry = placed.get(item.id);
+      if(!entry){
+        const meta = parseMeta(item.name);
+        const h = hashStr(item.id);
+        const rot = (h % 9) - 4; // subtler tilt in the compact grid
+        const el = document.createElement('div');
+        el.className = 'doodleCard quote-below';
+        el.style.setProperty('--rot', rot+'deg');
+        el.innerHTML = `<img src="${item.url}" loading="lazy" alt="">`
+          + `<div class="cap">${escapeHtml(meta.name)}</div>`
+          + (meta.quote ? `<div class="quoteBubble">“${escapeHtml(meta.quote)}”</div>` : '');
+        field.appendChild(el);
+        requestAnimationFrame(()=> el.classList.add('in'));
+        entry = { el };
+        placed.set(item.id, entry);
+        attachQuoteTap(el);
       } else {
-        used.add(entry.cell);
+        // came from the scattered desktop layout — clear its inline positioning
+        entry.el.style.left = ''; entry.el.style.top = ''; entry.el.style.width = '';
       }
     });
   }
