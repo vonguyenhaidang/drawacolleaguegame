@@ -16,7 +16,7 @@
   // ---- CONFIG ----------------------------------------------------------
   // Paste your deployed Google Apps Script Web App URL here (same URL for
   // both saving and listing doodles — the backend tells POST from GET apart).
-  const BACKEND_URL = 'AKfycbzRXKoiiSIMR86hheiACMYCnKhd5kuXjzrVmiVhHTUDLGcNRB1gU-yvBycd1tGBo2i1aw';
+  const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbzcYW0R2zjMSprTIGXicw3p8P8M3hZU2NEx0Yqz-KxsuBSsB76z39bLg7_AuRCSugcwuw/exec';
   const ROUND_SECONDS = 180; // 3 minutes
   const SHOWCASE_POLL_MS = 8000; // how often showcase mode checks for new doodles
 </script>
@@ -355,17 +355,38 @@
 
   function uploadDoodle(canvasEl, name){
     if(!backendReady()){
-      onDoneResult(false, 'Backend not set up — ask whoever runs this game to finish the setup.');
+      onDoneResult(false, 'Backend not set up — ask whoever runs this game to finish the setup (see SETUP.md).');
       return;
     }
     const dataUrl = canvasEl.toDataURL('image/png');
+    const filename = makeFilename(name);
     fetch(BACKEND_URL, {
       method:'POST',
-      mode:'no-cors', // Apps Script's response can't be read cross-origin; we just fire-and-forget
+      mode:'no-cors', // Apps Script's response can't be read cross-origin; we just fire-and-forget the request itself
       headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body: JSON.stringify({ image: dataUrl, filename: makeFilename(name) })
-    }).then(()=> onDoneResult(true))
+      body: JSON.stringify({ image: dataUrl, filename })
+    }).then(()=>{
+        // no-cors hides whether the save actually worked, so confirm it landed
+        // by checking the folder listing for the file we just sent.
+        $('doneTitle').textContent = 'Confirming it saved…';
+        confirmSaved(filename, 0);
+      })
       .catch(()=> onDoneResult(false, "Couldn't reach the server — check your connection."));
+  }
+
+  function confirmSaved(filename, attempt){
+    fetch(BACKEND_URL + (BACKEND_URL.includes('?') ? '&' : '?') + 'action=list', { cache:'no-store' })
+      .then(r=>r.json())
+      .then(list=>{
+        const found = Array.isArray(list) && list.some(f=> f.name === filename);
+        if(found){ onDoneResult(true); return; }
+        if(attempt < 5){ setTimeout(()=> confirmSaved(filename, attempt+1), 1200); }
+        else onDoneResult(false, "It didn't show up in the Drive folder. Most likely the backend needs a fresh look — see the troubleshooting steps.");
+      })
+      .catch(()=>{
+        if(attempt < 5){ setTimeout(()=> confirmSaved(filename, attempt+1), 1200); }
+        else onDoneResult(false, "Can't reach the backend to confirm the save — the Apps Script URL or deployment is likely misconfigured.");
+      });
   }
 
   function onDoneResult(ok, msg){
