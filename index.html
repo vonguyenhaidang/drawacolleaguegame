@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Guess Who? — Doodle Game</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  /* ============================================================
+     CONFIG — set these two before using the game. See SETUP.md.
+     ============================================================ */
+</style>
+<script>
+  // ---- CONFIG ----------------------------------------------------------
+  // Paste your deployed Google Apps Script Web App URL here (same URL for
+  // both saving and listing doodles — the backend tells POST from GET apart).
+  const BACKEND_URL = 'AKfycbwe1fOsMW7LKdzRN5iFfS3FGQl9ueyhsHHLWYY9r1cRu7VKHnQ0d0KLNTkpiyTT48WtWQ';
+  const ROUND_SECONDS = 180; // 3 minutes
+  const SHOWCASE_POLL_MS = 8000; // how often showcase mode checks for new doodles
+</script>
+<style>
+  :root{
+    --ink:#211f1c; --paper:#ffffff; --sub:#8b8577;
+    --accent:#ef5b3b; --accent2:#1f9e8f; --line:#e7e2d8; --chrome:#f6f3ec;
+    box-sizing:border-box;
+    padding-top:env(safe-area-inset-top,0px);
+    padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;overflow:hidden;background:var(--chrome);color:var(--ink);
+    font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;}
+  .hand{font-family:'Kalam',cursive;}
+  button{font-family:inherit;}
+
+  .screen{position:fixed; inset:0; display:none; flex-direction:column;}
+  .screen.active{display:flex;}
+
+  /* ---------------- HOME ---------------- */
+  #screenHome{align-items:center; justify-content:center; gap:28px; padding:24px; text-align:center;
+    background:
+      radial-gradient(circle at 15% 20%, #ffe4d8 0%, transparent 40%),
+      radial-gradient(circle at 85% 80%, #d7f3ee 0%, transparent 42%),
+      var(--chrome);
+  }
+  #screenHome h1{font-size:clamp(34px,7vw,64px); margin:0; line-height:1.02;}
+  #screenHome h1 .q{color:var(--accent);}
+  #screenHome p.sub{margin:0; color:var(--sub); font-size:15px; max-width:440px;}
+  .modeRow{display:flex; gap:18px; flex-wrap:wrap; justify-content:center;}
+  .modeCard{
+    width:230px; padding:26px 20px; border-radius:20px; border:2px solid var(--line);
+    background:var(--paper); cursor:pointer; text-align:left;
+    box-shadow:0 10px 24px rgba(30,25,15,.06); transition:transform .15s ease, box-shadow .15s ease;
+  }
+  .modeCard:hover{transform:translateY(-3px); box-shadow:0 16px 32px rgba(30,25,15,.1);}
+  .modeCard .ico{font-size:34px; margin-bottom:10px; display:block;}
+  .modeCard h3{margin:0 0 6px; font-size:18px;}
+  .modeCard p{margin:0; font-size:13px; color:var(--sub); line-height:1.4;}
+  .modeCard.player{border-color:#ffd9c9;}
+  .modeCard.showcase{border-color:#c8ece5;}
+
+  /* ---------------- PLAYER: setup ---------------- */
+  #screenSetup{align-items:center; justify-content:center; gap:20px; padding:24px; background:var(--chrome);}
+  #screenSetup .card{width:min(94vw,420px); background:var(--paper); border:2px solid var(--line); border-radius:20px;
+    padding:30px 26px; text-align:center; box-shadow:0 12px 30px rgba(30,25,15,.08);}
+  #screenSetup h2{margin:0 0 6px; font-size:24px;}
+  #screenSetup p{margin:0 0 18px; color:var(--sub); font-size:13.5px; line-height:1.5;}
+  #nameField{
+    width:100%; font-size:16px; padding:12px 14px; border-radius:12px; border:2px solid var(--line);
+    outline:none; text-align:center; font-family:'Kalam',cursive; font-weight:700;
+  }
+  #nameField:focus{border-color:var(--accent);}
+  .btn{
+    font-size:14px; font-weight:700; color:#fff; background:var(--ink);
+    border:none; border-radius:12px; padding:12px 20px; cursor:pointer;
+  }
+  .btn:active{transform:scale(.97);}
+  .btn.primary{background:var(--accent);}
+  .btn.ghost{background:transparent; color:var(--ink); border:2px solid var(--line);}
+  .btn:disabled{opacity:.45; cursor:default;}
+  .backLink{background:none; border:none; color:var(--sub); font-size:12.5px; cursor:pointer; text-decoration:underline; margin-top:14px;}
+
+  /* ---------------- PLAYER: drawing ---------------- */
+  #screenDraw{background:var(--chrome);}
+  #drawTop{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:10px 16px; background:var(--paper); border-bottom:1px solid var(--line); flex:none;
+  }
+  #drawTop .who{font-size:13px; color:var(--sub);}
+  #drawTop .who b{color:var(--ink); font-family:'Kalam',cursive; font-size:15px;}
+  #timer{font-variant-numeric:tabular-nums; font-weight:800; font-size:20px; padding:4px 12px; border-radius:10px;}
+  #timer.warn{color:#fff; background:var(--accent);}
+  #canvasWrap{flex:1; position:relative; background:var(--paper); overflow:hidden;}
+  #drawCanvas{position:absolute; inset:0; width:100%; height:100%; touch-action:none; cursor:crosshair;}
+  #drawBottom{
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:center;
+    padding:10px 14px; background:var(--paper); border-top:1px solid var(--line); flex:none;
+  }
+  .swatch{width:26px; height:26px; border-radius:8px; border:2px solid transparent; cursor:pointer; flex:none;}
+  .swatch.sel{border-color:var(--ink); transform:scale(1.1);}
+  .swatch.eraser{background:var(--paper); border:2px dashed var(--line); font-size:13px; display:flex; align-items:center; justify-content:center;}
+  #sizeRange{width:80px; accent-color:var(--accent);}
+  .tool{background:rgba(0,0,0,.05); border:1px solid var(--line); border-radius:10px; padding:6px 10px; font-size:12px; cursor:pointer;}
+
+  /* ---------------- PLAYER: uploading / done ---------------- */
+  #screenDone{align-items:center; justify-content:center; gap:14px; background:var(--chrome); text-align:center;}
+  #screenDone .big{font-size:52px;}
+  #screenDone h2{margin:0; font-size:22px;}
+  #screenDone p{margin:0; color:var(--sub); font-size:13.5px;}
+  .spinner{width:26px; height:26px; border-radius:50%; border:3px solid var(--line); border-top-color:var(--accent); animation:spin .8s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  /* ---------------- SHOWCASE ---------------- */
+  #screenShowcase{background:var(--paper);}
+  #showcaseHeader{
+    position:absolute; top:16px; left:20px; z-index:5; display:flex; align-items:baseline; gap:10px; pointer-events:none;
+  }
+  #showcaseHeader h1{margin:0; font-size:20px; color:var(--ink);}
+  #showcaseHeader span{font-size:12px; color:var(--sub);}
+  #showcaseCount{position:absolute; bottom:14px; right:18px; z-index:5; font-size:12px; color:var(--sub);}
+  #showcaseField{position:absolute; inset:0; overflow:hidden;}
+  .empty-hint{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:var(--sub); font-size:14px; text-align:center; padding:20px;}
+
+  .doodleCard{
+    position:absolute; width:190px; padding:10px 10px 12px; background:var(--paper);
+    border:2px solid var(--ink); border-radius:6px; box-shadow:4px 6px 0 rgba(0,0,0,.08);
+    opacity:0; transform:scale(.6) rotate(var(--rot,0deg)); transition:opacity .5s ease, transform .5s cubic-bezier(.2,1.4,.4,1);
+  }
+  .doodleCard.in{opacity:1; transform:scale(1) rotate(var(--rot,0deg));}
+  .doodleCard img{display:block; width:100%; height:150px; object-fit:contain; background:#fff;}
+  .doodleCard .cap{margin-top:8px; text-align:center; font-family:'Kalam',cursive; font-weight:700; font-size:16px; color:var(--ink);}
+
+  .configWarn{
+    position:fixed; left:50%; bottom:16px; transform:translateX(-50%); z-index:50;
+    background:#3a1210; color:#ffd9c9; font-size:12px; padding:10px 16px; border-radius:10px; max-width:90vw; text-align:center;
+  }
+</style>
+</head>
+<body>
+
+<!-- ================= HOME ================= -->
+<div id="screenHome" class="screen active">
+  <h1>Guess<span class="q"> Who?</span></h1>
+  <p class="sub">Draw a doodle of a colleague in 3 minutes, name them, and see if everyone can guess who's who on the big screen.</p>
+  <div class="modeRow">
+    <div class="modeCard player" id="goPlayer">
+      <span class="ico">🎨</span>
+      <h3>Start drawing</h3>
+      <p>You've got 3 minutes to doodle a colleague and submit it.</p>
+    </div>
+    <div class="modeCard showcase" id="goShowcase">
+      <span class="ico">🖼️</span>
+      <h3>Showcase mode</h3>
+      <p>Put this on the big screen — every doodle appears here as it comes in.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ================= PLAYER: SETUP ================= -->
+<div id="screenSetup" class="screen">
+  <div class="card">
+    <h2>Who are you drawing?</h2>
+    <p>Type their name, then the clock starts. You'll have 3 minutes to doodle them — don't write their name on the canvas!</p>
+    <input id="nameField" type="text" placeholder="e.g. Alex from Marketing" maxlength="40" autocomplete="off">
+    <div style="height:14px"></div>
+    <button class="btn primary" id="startDrawBtn" style="width:100%">Start the 3-minute timer</button>
+    <button class="backLink" id="backFromSetup">← Back</button>
+  </div>
+</div>
+
+<!-- ================= PLAYER: DRAWING ================= -->
+<div id="screenDraw" class="screen">
+  <div id="drawTop">
+    <div class="who">Drawing: <b id="whoLabel">—</b></div>
+    <div id="timer">3:00</div>
+    <button class="btn primary" id="doneBtn">✅ Done</button>
+  </div>
+  <div id="canvasWrap"><canvas id="drawCanvas"></canvas></div>
+  <div id="drawBottom">
+    <div class="swatch" data-color="#211f1c" style="background:#211f1c"></div>
+    <div class="swatch" data-color="#ef5b3b" style="background:#ef5b3b"></div>
+    <div class="swatch" data-color="#1f9e8f" style="background:#1f9e8f"></div>
+    <div class="swatch" data-color="#3b6fef" style="background:#3b6fef"></div>
+    <div class="swatch" data-color="#f2c94c" style="background:#f2c94c"></div>
+    <div class="swatch" data-color="#9b5de5" style="background:#9b5de5"></div>
+    <div class="swatch eraser" id="eraserBtn" title="Eraser">🧽</div>
+    <input type="range" id="sizeRange" min="2" max="26" value="6">
+    <button class="tool" id="undoBtn">↺ Undo</button>
+    <button class="tool" id="clearBtn">🗑 Clear</button>
+  </div>
+</div>
+
+<!-- ================= PLAYER: DONE ================= -->
+<div id="screenDone" class="screen">
+  <div class="big" id="doneIcon">⏳</div>
+  <div class="spinner" id="doneSpinner"></div>
+  <h2 id="doneTitle">Saving your doodle…</h2>
+  <p id="doneSub">Hang tight a second.</p>
+  <button class="btn ghost" id="doneHomeBtn" style="display:none">Back to home</button>
+</div>
+
+<!-- ================= SHOWCASE ================= -->
+<div id="screenShowcase" class="screen">
+  <div id="showcaseHeader"><h1 class="hand">Guess Who? 🎨</h1><span>— tap nothing, just enjoy</span></div>
+  <div id="showcaseField"></div>
+  <div id="showcaseCount"></div>
+</div>
+
+<script>
+(function(){
+  const $ = (id)=>document.getElementById(id);
+  const screens = ['screenHome','screenSetup','screenDraw','screenDone','screenShowcase'];
+  function show(id){ screens.forEach(s=> $(s).classList.toggle('active', s===id)); }
+
+  function backendReady(){ return BACKEND_URL && BACKEND_URL.indexOf('PASTE_') !== 0; }
+  if(!backendReady()){
+    const w = document.createElement('div');
+    w.className='configWarn';
+    w.textContent = '⚠️ Backend not configured — set BACKEND_URL near the top of this file (see SETUP.md).';
+    document.body.appendChild(w);
+  }
+
+  // ---------------- routing ----------------
+  const params = new URLSearchParams(location.search);
+  if(params.get('mode') === 'showcase'){ startShowcase(); }
+
+  $('goPlayer').addEventListener('click', ()=>{ $('nameField').value=''; show('screenSetup'); setTimeout(()=>$('nameField').focus(),50); });
+  $('goShowcase').addEventListener('click', startShowcase);
+  $('backFromSetup').addEventListener('click', ()=> show('screenHome'));
+
+  // ================= PLAYER MODE =================
+  let who = '';
+  $('startDrawBtn').addEventListener('click', ()=>{
+    who = $('nameField').value.trim();
+    if(!who) { $('nameField').focus(); return; }
+    $('whoLabel').textContent = who;
+    show('screenDraw');
+    initCanvas();
+    startTimer();
+  });
+
+  // ---- canvas drawing ----
+  const canvas = $('drawCanvas');
+  const ctx = canvas.getContext('2d');
+  let drawing = false, lastX=0, lastY=0, color='#211f1c', size=6, erasing=false;
+  let history = [];
+
+  function initCanvas(){
+    const wrap = $('canvasWrap');
+    canvas.width = wrap.clientWidth * devicePixelRatio;
+    canvas.height = wrap.clientHeight * devicePixelRatio;
+    canvas.style.width = wrap.clientWidth+'px';
+    canvas.style.height = wrap.clientHeight+'px';
+    ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0,0,wrap.clientWidth,wrap.clientHeight);
+    ctx.lineCap='round'; ctx.lineJoin='round';
+    history = [];
+    pushHistory();
+  }
+  function pushHistory(){
+    try{
+      history.push(canvas.toDataURL('image/png'));
+      if(history.length>25) history.shift();
+    }catch(e){}
+  }
+  function pointerPos(e){
+    const r = canvas.getBoundingClientRect();
+    const t = e.touches ? e.touches[0] : e;
+    return { x: t.clientX-r.left, y: t.clientY-r.top };
+  }
+  function startStroke(e){
+    e.preventDefault();
+    drawing = true;
+    const p = pointerPos(e); lastX=p.x; lastY=p.y;
+    ctx.beginPath(); ctx.arc(p.x,p.y, (erasing?size*1.6:size)/2, 0, Math.PI*2);
+    ctx.fillStyle = erasing ? '#ffffff' : color; ctx.fill();
+  }
+  function moveStroke(e){
+    if(!drawing) return; e.preventDefault();
+    const p = pointerPos(e);
+    ctx.strokeStyle = erasing ? '#ffffff' : color;
+    ctx.lineWidth = erasing ? size*1.6 : size;
+    ctx.beginPath(); ctx.moveTo(lastX,lastY); ctx.lineTo(p.x,p.y); ctx.stroke();
+    lastX=p.x; lastY=p.y;
+  }
+  function endStroke(e){ if(!drawing) return; drawing=false; pushHistory(); }
+  ['pointerdown','touchstart'].forEach(ev=> canvas.addEventListener(ev, startStroke, {passive:false}));
+  ['pointermove','touchmove'].forEach(ev=> canvas.addEventListener(ev, moveStroke, {passive:false}));
+  ['pointerup','pointerleave','touchend','touchcancel'].forEach(ev=> canvas.addEventListener(ev, endStroke));
+
+  document.querySelectorAll('#drawBottom .swatch[data-color]').forEach(sw=>{
+    sw.addEventListener('click', ()=>{
+      erasing=false; $('eraserBtn').classList.remove('sel');
+      document.querySelectorAll('#drawBottom .swatch').forEach(s=>s.classList.remove('sel'));
+      sw.classList.add('sel'); color = sw.dataset.color;
+    });
+  });
+  document.querySelector('#drawBottom .swatch[data-color]').classList.add('sel');
+  $('eraserBtn').addEventListener('click', ()=>{
+    erasing = !erasing;
+    $('eraserBtn').classList.toggle('sel', erasing);
+    document.querySelectorAll('#drawBottom .swatch[data-color]').forEach(s=>s.classList.remove('sel'));
+  });
+  $('sizeRange').addEventListener('input', (e)=> size = +e.target.value);
+  $('undoBtn').addEventListener('click', ()=>{
+    if(history.length<2) return;
+    history.pop();
+    const img = new Image();
+    img.onload = ()=>{ ctx.clearRect(0,0,canvas.width,canvas.height); ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0); ctx.drawImage(img,0,0,canvas.width/devicePixelRatio,canvas.height/devicePixelRatio); };
+    img.src = history[history.length-1];
+  });
+  $('clearBtn').addEventListener('click', ()=>{
+    const wrap = $('canvasWrap');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0,0,wrap.clientWidth,wrap.clientHeight);
+    pushHistory();
+  });
+
+  // ---- timer ----
+  let timerId = null, remaining = ROUND_SECONDS;
+  function startTimer(){
+    remaining = ROUND_SECONDS;
+    renderTimer();
+    clearInterval(timerId);
+    timerId = setInterval(()=>{
+      remaining--;
+      renderTimer();
+      if(remaining<=0){ clearInterval(timerId); finishDrawing(); }
+    }, 1000);
+  }
+  function renderTimer(){
+    const m = Math.floor(Math.max(0,remaining)/60), s = Math.max(0,remaining)%60;
+    $('timer').textContent = m+':'+String(s).padStart(2,'0');
+    $('timer').classList.toggle('warn', remaining<=20);
+  }
+  $('doneBtn').addEventListener('click', ()=>{ clearInterval(timerId); finishDrawing(); });
+
+  function finishDrawing(){
+    show('screenDone');
+    $('doneIcon').textContent = '⏳';
+    $('doneSpinner').style.display = 'block';
+    $('doneTitle').textContent = 'Saving your doodle…';
+    $('doneSub').textContent = 'Hang tight a second.';
+    $('doneHomeBtn').style.display = 'none';
+    uploadDoodle(canvas, who);
+  }
+
+  function makeFilename(name){
+    const stamp = new Date().toISOString().replace('T','_').replace(/[:.]/g,'-').slice(0,19);
+    const rand = Math.random().toString(36).slice(2,7);
+    return `doodle__${encodeURIComponent(name)}__${stamp}__${rand}.png`;
+  }
+
+  function uploadDoodle(canvasEl, name){
+    if(!backendReady()){
+      onDoneResult(false, 'Backend not set up — ask whoever runs this game to finish the setup.');
+      return;
+    }
+    const dataUrl = canvasEl.toDataURL('image/png');
+    fetch(BACKEND_URL, {
+      method:'POST',
+      mode:'no-cors', // Apps Script's response can't be read cross-origin; we just fire-and-forget
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ image: dataUrl, filename: makeFilename(name) })
+    }).then(()=> onDoneResult(true))
+      .catch(()=> onDoneResult(false, "Couldn't reach the server — check your connection."));
+  }
+
+  function onDoneResult(ok, msg){
+    $('doneSpinner').style.display = 'none';
+    $('doneIcon').textContent = ok ? '🎉' : '⚠️';
+    $('doneTitle').textContent = ok ? 'Saved!' : 'Something went wrong';
+    $('doneSub').textContent = ok ? 'Thanks — head to the big screen to see it appear.' : (msg || 'Please try again.');
+    $('doneHomeBtn').style.display = 'inline-block';
+    if(ok) setTimeout(()=> show('screenHome'), 3500);
+  }
+  $('doneHomeBtn').addEventListener('click', ()=> show('screenHome'));
+
+  window.addEventListener('resize', ()=>{ if($('screenDraw').classList.contains('active')) initCanvas(); });
+
+  // ================= SHOWCASE MODE =================
+  let showcasePoll = null;
+  const placed = new Map(); // id -> {el, cellIndex}
+  let lastLayoutCols = 0;
+
+  function startShowcase(){
+    show('screenShowcase');
+    placed.forEach(p=>p.el.remove());
+    placed.clear();
+    $('showcaseField').innerHTML = '';
+    if(!backendReady()){
+      $('showcaseField').innerHTML = '<div class="empty-hint">⚠️ Backend not configured — set BACKEND_URL near the top of this file (see SETUP.md).</div>';
+      return;
+    }
+    fetchAndPlace();
+    clearInterval(showcasePoll);
+    showcasePoll = setInterval(fetchAndPlace, SHOWCASE_POLL_MS);
+    window.addEventListener('resize', relayoutAll);
+  }
+
+  function hashStr(s){
+    let h = 0;
+    for(let i=0;i<s.length;i++){ h = (h*31 + s.charCodeAt(i)) | 0; }
+    return Math.abs(h);
+  }
+
+  function fetchAndPlace(){
+    fetch(BACKEND_URL + (BACKEND_URL.includes('?') ? '&' : '?') + 'action=list', { method:'GET' })
+      .then(r=>r.json())
+      .then(list=>{
+        if(!Array.isArray(list)) return;
+        $('showcaseCount').textContent = list.length + (list.length===1 ? ' doodle' : ' doodles');
+        if(list.length===0){
+          $('showcaseField').innerHTML = '<div class="empty-hint">No doodles yet — head to Start Drawing on another device to add the first one.</div>';
+          return;
+        }
+        document.querySelector('.empty-hint')?.remove();
+        layout(list);
+      })
+      .catch(()=>{ /* keep whatever is already on screen, just skip this poll */ });
+  }
+
+  function parseName(filename){
+    const m = filename.match(/^doodle__(.+?)__/);
+    if(!m) return filename.replace(/\.[a-z]+$/i,'');
+    try{ return decodeURIComponent(m[1]); }catch(e){ return m[1]; }
+  }
+
+  function layout(list){
+    const field = $('showcaseField');
+    const fw = field.clientWidth, fh = field.clientHeight;
+    const cardW = 190, cardH = 210, gap = 14;
+    const cols = Math.max(3, Math.floor(fw/(cardW+gap)));
+    const rows = Math.max(3, Math.ceil(list.length/cols) + 1);
+    const totalCells = cols*rows;
+    const cellW = fw/cols, cellH = Math.max(cardH+gap, fh/rows);
+
+    if(cols !== lastLayoutCols){ lastLayoutCols = cols; }
+
+    const used = new Set();
+    list.forEach(item=>{
+      let entry = placed.get(item.id);
+      if(!entry){
+        const h = hashStr(item.id);
+        let cell = h % totalCells;
+        while(used.has(cell)) cell = (cell+1) % totalCells;
+        used.add(cell);
+        const el = document.createElement('div');
+        el.className = 'doodleCard';
+        const rot = ((h % 17) - 8); // -8..8 deg, stable per id
+        el.style.setProperty('--rot', rot+'deg');
+        const jx = (h % 13) - 6, jy = ((h>>3) % 13) - 6;
+        el.style.left = Math.round((cell%cols)*cellW + jx) + 'px';
+        el.style.top = Math.round(Math.floor(cell/cols)*cellH + jy) + 'px';
+        el.innerHTML = `<img src="${item.url}" loading="lazy" alt=""><div class="cap">${escapeHtml(parseName(item.name))}</div>`;
+        field.appendChild(el);
+        requestAnimationFrame(()=> el.classList.add('in'));
+        entry = { el, cell };
+        placed.set(item.id, entry);
+      } else {
+        used.add(entry.cell);
+      }
+    });
+  }
+
+  function relayoutAll(){
+    // window resized (or rotated) — cell math depends on viewport size, so
+    // clear placements and let the next poll rebuild the grid from scratch.
+    placed.forEach(p=>p.el.remove());
+    placed.clear();
+    fetchAndPlace();
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+})();
+</script>
+</body>
+</html>
